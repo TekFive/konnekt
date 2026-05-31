@@ -1,0 +1,1 @@
+* https://developer.tigertext.com/reference/rest-api

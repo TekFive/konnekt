@@ -1,0 +1,45 @@
+[versions]
+kotlin = "2.3.0"
+okhttp = "4.12.0"
+exposed = "1.1.1"
+junit-jupiter = "5.11.4"
+slf4j = "2.0.16"
+klaxon = "5.6"
+tink = "1.17.0"
+hikaricp = "7.0.2"
+postgresql = "42.7.9"
+testcontainers = "1.21.4"
+jetty = "12.1.7"
+undertow = "2.3.18.Final"
+commons-fileupload = "1.6.0"
+aws = "2.29.0"
+vault = "5.4.0"
+
+[libraries]
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
+kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+exposed-jdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "exposed" }
+exposed-json = { module = "org.jetbrains.exposed:exposed-json", version.ref = "exposed" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+klaxon = { module = "com.beust:klaxon", version.ref = "klaxon" }
+tink = { module = "com.google.crypto.tink:tink", version.ref = "tink" }
+hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikaricp" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+testcontainers-core = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
+testcontainers-junit = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
+jakarta-servlet = { module = "jakarta.servlet:jakarta.servlet-api", version = "6.0.0" }
+javax-servlet = { module = "javax.servlet:javax.servlet-api", version = "4.0.1" }
+commons-fileupload = { module = "commons-fileupload:commons-fileupload", version.ref = "commons-fileupload" }
+jetty-server = { module = "org.eclipse.jetty:jetty-server", version.ref = "jetty" }
+undertow = { module = "io.undertow:undertow-core", version.ref = "undertow" }
+aws-secretsmanager = { module = "software.amazon.awssdk:secretsmanager", version.ref = "aws" }
+aws-ssm = { module = "software.amazon.awssdk:ssm", version.ref = "aws" }
+vault = { module = "io.github.jopenlibs:vault-java-driver", version.ref = "vault" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

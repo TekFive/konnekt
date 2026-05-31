@@ -1,0 +1,2 @@
+org.tekfive.konnekt.location.service.google.GoogleCoordinatesProvider
+org.tekfive.konnekt.location.service.mapmaker.MapMakerCoordinatesProvider
