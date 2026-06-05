@@ -8,9 +8,7 @@ import java.net.URL
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
-import javax.net.ssl.SSLSession
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
@@ -51,11 +49,8 @@ internal class OkHttpClientPool {
                 sslContext.init(null, tmf.getTrustManagers(), null)
 
 
-                builder.sslSocketFactory(sslContext.getSocketFactory(), tmf.trustManagers[0] as X509TrustManager).hostnameVerifier(object : HostnameVerifier {
-                    override fun verify(hostname: String, session: SSLSession): Boolean {
-                        return true
-                    }
-                })
+                // Trust only the pinned CA, but keep OkHttp's default hostname verification
+                builder.sslSocketFactory(sslContext.getSocketFactory(), tmf.trustManagers[0] as X509TrustManager)
             }
 
             httpClient = builder.build()
