@@ -6,9 +6,16 @@ import org.tekfive.konnekt.message.MessageAddress
 import org.tekfive.konnekt.message.MessageRecipient
 import org.tekfive.konnekt.message.email.EmailMessage
 import org.tekfive.konnekt.message.email.EmailCapability
+import org.tekfive.konnekt.message.email.EmailAttachment
 import org.tekfive.konnekt.message.email.EmailStatus
+import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridAttachment
+import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridContent
+import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridEmailAddress
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridEmailEvent
+import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridMailSendRequest
+import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridPersonalization
 import java.net.InetSocketAddress
+import java.util.Base64
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -152,6 +159,83 @@ class TwilioSendGridEmailSenderTest {
             )
 
             assertNull(status)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `sendgrid request serializes attachments array`() {
+        val request = TwilioSendGridMailSendRequest(
+            personalizations = listOf(
+                TwilioSendGridPersonalization(to = listOf(TwilioSendGridEmailAddress("to@example.com"))),
+            ),
+            from = TwilioSendGridEmailAddress("from@example.com"),
+            subject = "Subject",
+            content = listOf(TwilioSendGridContent("text/plain", "Body")),
+            attachments = listOf(
+                TwilioSendGridAttachment(content = "UERGREFUQQ==", type = "application/pdf", filename = "report.pdf"),
+            ),
+        )
+
+        val json = request.toJsonString()
+
+        assertEquals(true, json.contains("\"attachments\""))
+        assertEquals(true, json.contains("\"filename\":\"report.pdf\""))
+        assertEquals(true, json.contains("\"disposition\":\"attachment\""))
+    }
+
+    @Test
+    fun `sendgrid request omits attachments when empty`() {
+        val request = TwilioSendGridMailSendRequest(
+            personalizations = listOf(
+                TwilioSendGridPersonalization(to = listOf(TwilioSendGridEmailAddress("to@example.com"))),
+            ),
+            from = TwilioSendGridEmailAddress("from@example.com"),
+            content = listOf(TwilioSendGridContent("text/plain", "Body")),
+        )
+
+        assertEquals(false, request.toJsonString().contains("attachments"))
+    }
+
+    @Test
+    fun `sendgrid sender sends attachments in request body`() {
+        val server = HttpServer.create(InetSocketAddress(0), 0)
+        val requestBodies = mutableListOf<String>()
+        try {
+            server.createContext("/v3/mail/send") { exchange ->
+                requestBodies.add(exchange.requestBody.readBytes().toString(Charsets.UTF_8))
+                exchange.responseHeaders.add("X-Message-Id", "msg-123")
+                exchange.sendResponseHeaders(202, -1)
+                exchange.close()
+            }
+            server.start()
+
+            TwilioEmailProvider.send(
+                message = EmailMessage(
+                    to = listOf(MessageRecipient("to@example.com", "To")),
+                    from = MessageAddress("from@example.com", "From"),
+                    subject = "Subject",
+                    body = "Body",
+                    contentType = EmailMessage.TEXT_CONTENT_TYPE,
+                    attachments = listOf(
+                        EmailAttachment(
+                            fileName = "report.pdf",
+                            contentType = "application/pdf",
+                            content = "PDFDATA".toByteArray(Charsets.UTF_8),
+                        ),
+                    ),
+                ),
+                providerConfiguration = json {
+                    "apiKey" set "SG.test"
+                    "baseUrl" set "http://127.0.0.1:${server.address.port}"
+                },
+            )
+
+            assertEquals(1, requestBodies.size)
+            val expectedBase64 = Base64.getEncoder().encodeToString("PDFDATA".toByteArray(Charsets.UTF_8))
+            assertEquals(true, requestBodies[0].contains("\"filename\":\"report.pdf\""))
+            assertEquals(true, requestBodies[0].contains("\"content\":\"$expectedBase64\""))
         } finally {
             server.stop(0)
         }

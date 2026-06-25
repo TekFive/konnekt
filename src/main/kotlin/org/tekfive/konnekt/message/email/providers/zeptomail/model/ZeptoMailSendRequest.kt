@@ -15,6 +15,7 @@ data class ZeptoMailSendRequest(
     val trackOpens: Boolean? = null,
     val trackClicks: Boolean? = null,
     val bounceAddress: String? = null,
+    val attachments: List<ZeptoMailAttachment> = emptyList(),
 ) : ToJsonObject {
 
     override fun toJsonObject(): JsonObject {
@@ -45,6 +46,9 @@ data class ZeptoMailSendRequest(
             if (bounceAddress != null) {
                 "bounce_address" set bounceAddress
             }
+            if (attachments.isNotEmpty()) {
+                "attachments" set attachments
+            }
         }
     }
 }
@@ -71,6 +75,21 @@ data class ZeptoMailRecipient(
     override fun toJsonObject(): JsonObject {
         return json {
             "email_address" set emailAddress
+        }
+    }
+}
+
+data class ZeptoMailAttachment(
+    val content: String,
+    val mimeType: String,
+    val name: String,
+) : ToJsonObject {
+
+    override fun toJsonObject(): JsonObject {
+        return json {
+            "content" set content
+            "mime_type" set mimeType
+            "name" set name
         }
     }
 }

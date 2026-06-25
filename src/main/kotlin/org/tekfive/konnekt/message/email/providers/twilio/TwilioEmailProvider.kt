@@ -7,13 +7,16 @@ import org.tekfive.konnekt.message.email.EmailCapability
 import org.tekfive.konnekt.message.email.EmailMessage
 import org.tekfive.konnekt.message.email.EmailResponse
 import org.tekfive.konnekt.message.email.EmailStatus
+import org.tekfive.konnekt.message.email.EmailAttachment
 import org.tekfive.konnekt.message.email.providers.EmailProvider
+import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridAttachment
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridContent
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridEmailAddress
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridEmailActivityResponse
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridEmailEvent
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridMailSendRequest
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridPersonalization
+import java.util.Base64
 
 /**
  * Stateless Twilio SendGrid email sender that reads API settings from endpoint config.
@@ -100,6 +103,15 @@ object TwilioEmailProvider : EmailProvider {
                     value = message.body,
                 ),
             ),
+            attachments = message.attachments.map(::toAttachment),
+        )
+    }
+
+    private fun toAttachment(attachment: EmailAttachment): TwilioSendGridAttachment {
+        return TwilioSendGridAttachment(
+            content = Base64.getEncoder().encodeToString(attachment.content),
+            type = attachment.contentType,
+            filename = attachment.fileName,
         )
     }
 

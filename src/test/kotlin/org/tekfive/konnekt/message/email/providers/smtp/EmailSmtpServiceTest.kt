@@ -1,10 +1,13 @@
 package org.tekfive.konnekt.message.email.providers.smtp
 
+import jakarta.mail.Session
+import jakarta.mail.internet.MimeMultipart
 import org.tekfive.jfk.JsonObject
 import org.tekfive.jfk.JsonMappingException
 import org.tekfive.jfk.json
 import org.tekfive.konnekt.message.MessageAddress
 import org.tekfive.konnekt.message.MessageRecipient
+import org.tekfive.konnekt.message.email.EmailAttachment
 import org.tekfive.konnekt.message.email.EmailMessage
 import org.tekfive.konnekt.message.email.EmailStatus
 import java.io.BufferedReader
@@ -13,6 +16,7 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.Properties
 import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -167,6 +171,49 @@ class EmailSmtpServiceTest {
         } finally {
             smtpServer.close()
         }
+    }
+
+    @Test
+    fun `buildMimeMessage without attachments is a single body part`() {
+        val session = Session.getInstance(Properties())
+        val message = EmailMessage(
+            to = listOf(MessageRecipient("to@example.com", "To")),
+            from = MessageAddress("sender@example.com", "Sender"),
+            subject = "Subject",
+            body = "Body",
+            contentType = EmailMessage.TEXT_CONTENT_TYPE,
+        )
+
+        val mime = SmtpEmailProvider.buildMimeMessage(message, session)
+
+        assertEquals("Body", mime.content)
+    }
+
+    @Test
+    fun `buildMimeMessage with attachment is multipart with body and attachment parts`() {
+        val session = Session.getInstance(Properties())
+        val message = EmailMessage(
+            to = listOf(MessageRecipient("to@example.com", "To")),
+            from = MessageAddress("sender@example.com", "Sender"),
+            subject = "Subject",
+            body = "Body",
+            contentType = EmailMessage.TEXT_CONTENT_TYPE,
+            attachments = listOf(
+                EmailAttachment(
+                    fileName = "report.pdf",
+                    contentType = "application/pdf",
+                    content = "PDFDATA".toByteArray(Charsets.UTF_8),
+                ),
+            ),
+        )
+
+        val mime = SmtpEmailProvider.buildMimeMessage(message, session)
+
+        val multipart = mime.content as MimeMultipart
+        assertEquals(2, multipart.count)
+        val attachmentPart = multipart.getBodyPart(1)
+        assertEquals("report.pdf", attachmentPart.fileName)
+        assertEquals("attachment", attachmentPart.disposition)
     }
 }
 

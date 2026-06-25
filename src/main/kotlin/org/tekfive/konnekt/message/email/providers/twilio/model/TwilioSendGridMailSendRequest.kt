@@ -9,6 +9,7 @@ data class TwilioSendGridMailSendRequest(
     val from: TwilioSendGridEmailAddress,
     val subject: String? = null,
     val content: List<TwilioSendGridContent>,
+    val attachments: List<TwilioSendGridAttachment> = emptyList(),
 ) : ToJsonObject {
 
     override fun toJsonObject(): JsonObject {
@@ -19,6 +20,9 @@ data class TwilioSendGridMailSendRequest(
                 "subject" set subject
             }
             "content" set content
+            if (attachments.isNotEmpty()) {
+                "attachments" set attachments
+            }
         }
     }
 }
@@ -63,6 +67,22 @@ data class TwilioSendGridContent(
         return json {
             "type" set type
             "value" set value
+        }
+    }
+}
+
+data class TwilioSendGridAttachment(
+    val content: String,
+    val type: String,
+    val filename: String,
+    val disposition: String = "attachment",
+) : ToJsonObject {
+    override fun toJsonObject(): JsonObject {
+        return json {
+            "content" set content
+            "type" set type
+            "filename" set filename
+            "disposition" set disposition
         }
     }
 }
