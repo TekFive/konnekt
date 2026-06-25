@@ -1,16 +1,21 @@
 package org.tekfive.konnekt.message.email.providers.smtp
 
+import jakarta.activation.DataHandler
 import jakarta.mail.Authenticator
 import jakarta.mail.Message
 import jakarta.mail.PasswordAuthentication
 import jakarta.mail.Session
 import jakarta.mail.Transport
 import jakarta.mail.internet.InternetAddress
+import jakarta.mail.internet.MimeBodyPart
 import jakarta.mail.internet.MimeMessage
+import jakarta.mail.internet.MimeMultipart
+import jakarta.mail.util.ByteArrayDataSource
 import org.tekfive.ack.Ack
 import org.tekfive.jfk.JsonObject
 import org.tekfive.konnekt.message.MessageAddress
 import org.tekfive.konnekt.message.MessageRecipient
+import org.tekfive.konnekt.message.email.EmailAttachment
 import org.tekfive.konnekt.message.email.EmailMessage
 import org.tekfive.konnekt.message.email.EmailResponse
 import org.tekfive.konnekt.message.email.EmailProviderType
@@ -38,6 +43,16 @@ object SmtpEmailProvider : EmailProvider{
 
         val session = Session.getInstance(buildSessionProperties(smtpConfiguration), buildAuthenticator(smtpConfiguration))
 
+        val mimeMessage = buildMimeMessage(message, session)
+        Transport.send(mimeMessage)
+        return EmailResponse(
+            messageId = "",
+            providerId = EmailProviderType.SMTP.providerId,
+            status = EmailStatus.SENT,
+        )
+    }
+
+    internal fun buildMimeMessage(message: EmailMessage, session: Session): MimeMessage {
         val mimeMessage = MimeMessage(session)
         mimeMessage.setFrom(toInternetAddress(message.from))
         mimeMessage.setRecipients(Message.RecipientType.TO, message.to.map(::toInternetAddress).toTypedArray())
@@ -54,13 +69,32 @@ object SmtpEmailProvider : EmailProvider{
             mimeMessage.setSubject(message.subject, Charsets.UTF_8.name())
         }
 
-        mimeMessage.setContent(message.body, "${message.contentType}; charset=UTF-8")
-        Transport.send(mimeMessage)
-        return EmailResponse(
-            messageId = "",
-            providerId = EmailProviderType.SMTP.providerId,
-            status = EmailStatus.SENT,
-        )
+        if (message.attachments.isEmpty()) {
+            mimeMessage.setContent(message.body, "${message.contentType}; charset=UTF-8")
+        } else {
+            val multipart = MimeMultipart("mixed")
+
+            val bodyPart = MimeBodyPart()
+            bodyPart.setContent(message.body, "${message.contentType}; charset=UTF-8")
+            multipart.addBodyPart(bodyPart)
+
+            for (attachment in message.attachments) {
+                multipart.addBodyPart(buildAttachmentPart(attachment))
+            }
+
+            mimeMessage.setContent(multipart)
+        }
+
+        return mimeMessage
+    }
+
+    private fun buildAttachmentPart(attachment: EmailAttachment): MimeBodyPart {
+        val part = MimeBodyPart()
+        val dataSource = ByteArrayDataSource(attachment.content, attachment.contentType)
+        part.dataHandler = DataHandler(dataSource)
+        part.fileName = attachment.fileName
+        part.disposition = MimeBodyPart.ATTACHMENT
+        return part
     }
 
     override fun status(messageId: String, providerConfiguration: JsonObject): EmailStatus? {
