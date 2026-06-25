@@ -7,11 +7,14 @@ import org.tekfive.konnekt.message.email.EmailMessage
 import org.tekfive.konnekt.message.email.EmailProviderType
 import org.tekfive.konnekt.message.email.EmailResponse
 import org.tekfive.konnekt.message.email.EmailStatus
+import org.tekfive.konnekt.message.email.EmailAttachment
 import org.tekfive.konnekt.message.email.providers.EmailProvider
+import org.tekfive.konnekt.message.email.providers.zeptomail.model.ZeptoMailAttachment
 import org.tekfive.konnekt.message.email.providers.zeptomail.model.ZeptoMailEmailAddress
 import org.tekfive.konnekt.message.email.providers.zeptomail.model.ZeptoMailEmailStatusResponse
 import org.tekfive.konnekt.message.email.providers.zeptomail.model.ZeptoMailRecipient
 import org.tekfive.konnekt.message.email.providers.zeptomail.model.ZeptoMailSendRequest
+import java.util.Base64
 
 /**
  * ZeptoMail sender using the send-mail token for outbound email and optional OAuth for status lookup.
@@ -118,6 +121,15 @@ object ZeptoMailEmailProvider : EmailProvider {
             trackOpens = trackOpens,
             trackClicks = trackClicks,
             bounceAddress = bounceAddress,
+            attachments = message.attachments.map(::toAttachment),
+        )
+    }
+
+    private fun toAttachment(attachment: EmailAttachment): ZeptoMailAttachment {
+        return ZeptoMailAttachment(
+            content = Base64.getEncoder().encodeToString(attachment.content),
+            mimeType = attachment.contentType,
+            name = attachment.fileName,
         )
     }
 
