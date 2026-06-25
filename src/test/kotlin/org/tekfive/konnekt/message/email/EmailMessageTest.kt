@@ -5,6 +5,7 @@ import org.tekfive.konnekt.message.MessageRecipient
 import org.tekfive.konnekt.message.QueuedMessage
 import org.tekfive.konnekt.message.QueuedMessageMetadata
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 
 class EmailMessageTest {
@@ -42,5 +43,44 @@ class EmailMessageTest {
         assertEquals(message.to, restored.to)
         assertEquals(message.cc, restored.cc)
         assertEquals(message.bcc, restored.bcc)
+    }
+
+    @Test
+    fun `queued email message preserves attachments`() {
+        val message = EmailMessage(
+            to = listOf(MessageRecipient("to@example.com", "To")),
+            from = MessageAddress("sender@example.com", "Sender"),
+            subject = "Subject",
+            body = "Body",
+            contentType = EmailMessage.TEXT_CONTENT_TYPE,
+            attachments = listOf(
+                EmailAttachment(
+                    fileName = "report.pdf",
+                    contentType = "application/pdf",
+                    content = "PDFDATA".toByteArray(Charsets.UTF_8),
+                ),
+            ),
+        )
+
+        val restored = EmailMessage.fromJson(message.toJsonObject())
+
+        assertEquals(1, restored.attachments.size)
+        val attachment = restored.attachments.single()
+        assertEquals("report.pdf", attachment.fileName)
+        assertEquals("application/pdf", attachment.contentType)
+        assertContentEquals("PDFDATA".toByteArray(Charsets.UTF_8), attachment.content)
+    }
+
+    @Test
+    fun `email message defaults to no attachments`() {
+        val message = EmailMessage(
+            to = listOf(MessageRecipient("to@example.com", "To")),
+            from = MessageAddress("sender@example.com", "Sender"),
+            subject = "Subject",
+            body = "Body",
+            contentType = EmailMessage.TEXT_CONTENT_TYPE,
+        )
+
+        assertEquals(emptyList(), EmailMessage.fromJson(message.toJsonObject()).attachments)
     }
 }

@@ -17,6 +17,7 @@ class EmailMessage(
     val subject: String?,
     body: String,
     val contentType: String,
+    val attachments: List<EmailAttachment> = emptyList(),
     ) : Message(
     to,
     from,
