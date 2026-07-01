@@ -5,8 +5,10 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.slf4j.LoggerFactory
 import org.tekfive.jfk.asRequiredJsonObject
 import org.tekfive.jfk.JsonObject
+import org.tekfive.konnekt.message.MessageHttpClient
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridEmailActivityResponse
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridEmailEvent
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridMailSendRequest
@@ -14,9 +16,11 @@ import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridMa
 
 open class TwilioSendGridClient(
     private val auth: TwilioSendGridConfiguration,
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = MessageHttpClient.client,
     private val executeOverride: ((Request) -> TwilioSendGridRawResponse)? = null,
 ) {
+
+    private val log = LoggerFactory.getLogger(javaClass)
 
     open fun sendMail(requestBody: TwilioSendGridMailSendRequest): TwilioSendGridMailSendResponse {
         val request = post("v3", "mail", "send", body = requestBody.toJsonString())
@@ -86,7 +90,7 @@ open class TwilioSendGridClient(
     private fun execute(request: Request): TwilioSendGridRawResponse {
         val response = executeRaw(request)
         if (!isSuccessfulSendResponse(response.code)) {
-            throw TwilioSendGridException("SendGrid request failed with ${response.code}: ${response.body}")
+            throw TwilioSendGridException("SendGrid request failed with HTTP status ${response.code}", statusCode = response.code)
         }
 
         return response
@@ -94,12 +98,17 @@ open class TwilioSendGridClient(
 
     private fun executeOrNull(request: Request): TwilioSendGridRawResponse? {
         val response = executeRaw(request)
-        if (response.code == 404 || response.code == 403) {
+        if (response.code == 404) {
+            return null
+        }
+
+        if (response.code == 403) {
+            log.warn("SendGrid activity lookup returned HTTP status 403; the API key likely lacks Email Activity permission.")
             return null
         }
 
         if (!isSuccessfulActivityResponse(response.code)) {
-            throw TwilioSendGridException("SendGrid activity lookup failed with ${response.code}: ${response.body}")
+            throw TwilioSendGridException("SendGrid activity lookup failed with HTTP status ${response.code}", statusCode = response.code)
         }
 
         return response
@@ -131,6 +140,8 @@ open class TwilioSendGridClient(
         val escapedMessageId = messageId
             .replace("\\", "\\\\")
             .replace("'", "\\'")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
 
         return "msg_id LIKE '$escapedMessageId%'"
     }

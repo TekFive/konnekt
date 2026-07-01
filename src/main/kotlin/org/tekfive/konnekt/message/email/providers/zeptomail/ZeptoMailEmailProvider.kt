@@ -92,18 +92,6 @@ object ZeptoMailEmailProvider : EmailProvider {
         }
     }
 
-    private fun buildAuth(config: JsonObject): ZeptoMailConfiguration {
-        val sendMailToken = config["sendMailToken"].string
-            ?: error("ZeptoMail sendMailToken is required in endpoint config.")
-        val oauthAccessToken = config["oauthAccessToken"].string
-        val baseUrl = config["baseUrl"].string ?: ZeptoMailConfiguration.DEFAULT_BASE_URL
-        return ZeptoMailConfiguration(
-            sendMailToken = sendMailToken,
-            oauthAccessToken = oauthAccessToken,
-            baseUrl = baseUrl,
-        )
-    }
-
     private fun buildSendRequest(message: EmailMessage, config: JsonObject): ZeptoMailSendRequest {
         val body = buildBody(message)
         val bounceAddress = config["bounceAddress"].string?.trim().orEmpty().ifBlank { null }
@@ -134,12 +122,13 @@ object ZeptoMailEmailProvider : EmailProvider {
     }
 
     private fun buildBody(message: EmailMessage): ZeptoMailBody {
-        return when (message.contentType) {
-            EmailMessage.TEXT_CONTENT_TYPE -> ZeptoMailBody(textBody = message.body, htmlBody = null)
-            EmailMessage.HTML_CONTENT_TYPE -> ZeptoMailBody(textBody = null, htmlBody = message.body)
-            else -> throw IllegalArgumentException(
-                "ZeptoMail supports only ${EmailMessage.TEXT_CONTENT_TYPE} and ${EmailMessage.HTML_CONTENT_TYPE} content types",
-            )
+        // Consistent with the SMTP and SendGrid providers: anything starting with text/html
+        // (e.g. "text/html; charset=UTF-8") is HTML, everything else is treated as plain text.
+        val isHtml = message.contentType.trim().startsWith(EmailMessage.HTML_CONTENT_TYPE, ignoreCase = true)
+        return if (isHtml) {
+            ZeptoMailBody(textBody = null, htmlBody = message.body)
+        } else {
+            ZeptoMailBody(textBody = message.body, htmlBody = null)
         }
     }
 

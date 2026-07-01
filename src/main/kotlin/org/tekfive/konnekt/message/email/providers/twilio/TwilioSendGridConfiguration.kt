@@ -17,4 +17,8 @@ data class TwilioSendGridConfiguration(
 
     val normalizedBaseUrl: String
         get() = (baseUrl ?: DEFAULT_BASE_URL).trimEnd('/')
+
+    override fun toString(): String {
+        return "TwilioSendGridConfiguration(apiKey=REDACTED, baseUrl=$baseUrl)"
+    }
 }

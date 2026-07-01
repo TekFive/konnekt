@@ -8,10 +8,11 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.tekfive.jfk.JsonObject
 import org.tekfive.jfk.asRequiredJsonObject
 import org.tekfive.jfk.json
+import org.tekfive.konnekt.message.MessageHttpClient
 
 open class SlackClient(
     private val auth: SlackAuth,
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = MessageHttpClient.client,
     private val executeOverride: ((Request) -> String)? = null,
 ) {
 
@@ -61,13 +62,15 @@ open class SlackClient(
     }
 
     open fun findConversationByName(name: String): String? {
-        val normalizedName = name.trim().removePrefix("#")
+        // Slack channel names are always lowercase; normalize before comparing.
+        val normalizedName = name.trim().removePrefix("#").lowercase()
         if (normalizedName.isBlank()) return null
 
         var cursor: String? = null
         do {
             val query = mutableMapOf(
                 "types" to "public_channel,private_channel",
+                "exclude_archived" to "true",
                 "limit" to "1000",
             )
             if (!cursor.isNullOrBlank()) {
@@ -78,9 +81,9 @@ open class SlackClient(
             val match = response.array("channels")
                 ?.toReqObjList()
                 ?.firstOrNull { channel ->
-                    channel.string("name") == normalizedName ||
-                        channel.string("name_normalized") == normalizedName ||
-                        channel.string("id") == normalizedName
+                    channel.string("name")?.lowercase() == normalizedName ||
+                        channel.string("name_normalized")?.lowercase() == normalizedName ||
+                        channel.string("id")?.equals(normalizedName, ignoreCase = true) == true
                 }
 
             if (match != null) {
@@ -135,10 +138,13 @@ open class SlackClient(
     private fun executeOrNull(request: Request, ignoredErrors: Set<String>): JsonObject? {
         val body = executeBody(request)
         val response = body.asRequiredJsonObject()
-        if (response.boolean("ok") != false) {
+        // A missing "ok" field is an error, not a success — require an explicit true.
+        if (response.boolean("ok") == true) {
             return response
         }
 
+        // The Slack "error" code is a stable enum-like token (e.g. "channel_not_found") and is
+        // safe to surface; the response body itself must never appear in an exception message.
         val error = response.string("error") ?: "unknown_error"
         if (error in ignoredErrors) {
             return null
@@ -153,7 +159,8 @@ open class SlackClient(
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw SlackException("Slack request failed with ${response.code}: $body")
+                // Never include the response body — it may contain PHI or credentials.
+                throw SlackException("Slack request failed with HTTP status ${response.code}", statusCode = response.code)
             }
             return body
         }

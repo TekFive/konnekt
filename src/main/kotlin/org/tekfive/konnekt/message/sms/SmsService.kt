@@ -5,11 +5,13 @@ import org.tekfive.jfk.json
 import org.tekfive.konnekt.message.MessagingException
 import org.tekfive.konnekt.message.MessageReceiptDetails
 import org.tekfive.konnekt.message.QueuedMessage
+import org.tekfive.konnekt.message.sms.providers.twilio.TwilioSmsException
 import org.tekfive.konnekt.message.sms.providers.twilio.TwilioSmsSender
 import java.io.IOException
 
 object SmsService {
 
+    @Volatile
     private var resolver: SmsEndpointResolver? = null
 
     @Synchronized
@@ -28,6 +30,8 @@ object SmsService {
             throw MessagingException(false, e.message ?: "Invalid SMS request", e)
         } catch (e: IOException) {
             throw MessagingException(true, e.message ?: "SMS provider network failure", e)
+        } catch (e: TwilioSmsException) {
+            throw MessagingException(isRecoverable(e), e.message ?: "SMS provider failure", e)
         } catch (e: RuntimeException) {
             throw MessagingException(false, e.message ?: "SMS provider failure", e)
         }
@@ -73,6 +77,8 @@ object SmsService {
             throw MessagingException(false, e.message ?: "Invalid SMS status request", e)
         } catch (e: IOException) {
             throw MessagingException(true, e.message ?: "SMS provider network failure", e)
+        } catch (e: TwilioSmsException) {
+            throw MessagingException(isRecoverable(e), e.message ?: "SMS provider failure", e)
         } catch (e: RuntimeException) {
             throw MessagingException(false, e.message ?: "SMS provider failure", e)
         }
@@ -85,6 +91,15 @@ object SmsService {
     private fun resolveEndpoint(endpointId: String): SmsEndpoint {
         val r = resolver ?: error("No SmsEndpointResolver registered. Call SmsService.registerResolver() at startup.")
         return r.resolve(endpointId) ?: error("SmsEndpoint not found for id: $endpointId")
+    }
+
+    /**
+     * A Twilio failure is retryable only when it carries an HTTP status that
+     * [MessagingException.isRecoverableStatus] classifies as transient (408/429/5xx).
+     */
+    private fun isRecoverable(e: TwilioSmsException): Boolean {
+        val statusCode = e.statusCode ?: return false
+        return MessagingException.isRecoverableStatus(statusCode)
     }
 
     private fun supportsStatusLookup(provider: SmsServiceProvider): Boolean {

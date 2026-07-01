@@ -7,6 +7,8 @@ import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridMa
 import org.tekfive.konnekt.message.email.providers.twilio.model.TwilioSendGridPersonalization
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import okhttp3.Request
@@ -101,7 +103,8 @@ class TwilioSendGridClientTest {
 
         assertNotNull(capturedRequest)
         assertEquals("/v3/messages", capturedRequest!!.url.encodedPath)
-        assertEquals("msg_id LIKE '$trackingId%'", capturedRequest!!.url.queryParameter("query"))
+        // The `_` in the tracking id is a LIKE wildcard and must be escaped in the query.
+        assertEquals("msg_id LIKE 'Ua9z9lSTSaqYBWJe\\_Xfc-Q%'", capturedRequest!!.url.queryParameter("query"))
         assertEquals("msg-123", response?.messageId)
         assertEquals("delivered", response?.status)
         assertEquals(listOf(TwilioSendGridEmailEvent(event_name = "opened", timestamp = "123")), response?.events)
@@ -190,6 +193,29 @@ class TwilioSendGridClientTest {
         )
 
         assertNull(client.getEmailActivity("msg-123"))
+    }
+
+    @Test
+    fun `sendgrid client scrubs response body from send failure exceptions`() {
+        val responseBody = """{"errors":[{"message":"recipient someone@example.com rejected"}]}"""
+        val client = TwilioSendGridClient(
+            auth = TwilioSendGridConfiguration(apiKey = "SG.test"),
+            executeOverride = {
+                TwilioSendGridClient.TwilioSendGridRawResponse(
+                    code = 500,
+                    body = responseBody,
+                    headers = emptyMap(),
+                )
+            },
+        )
+
+        val exception = assertFailsWith<TwilioSendGridException> {
+            client.sendMail(testRequest())
+        }
+
+        assertEquals(500, exception.statusCode)
+        assertFalse(exception.message.orEmpty().contains("someone@example.com"))
+        assertFalse(exception.message.orEmpty().contains(responseBody))
     }
 
     private fun testRequest(): TwilioSendGridMailSendRequest {

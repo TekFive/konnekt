@@ -182,4 +182,125 @@ class TemplateRendererValidationTest {
         val issues = TemplateRenderer.validate(t)
         assertTrue(issues.isEmpty(), "Expected no issues but got: $issues")
     }
+
+    @Test
+    fun `whitespace inside block tags is tolerated`() {
+        val t = template(
+            htmlBody = "{{#if show }}<p>{{name}}</p>{{/if }}{{ #each items }}{{.}}{{ /each }}",
+            variables = listOf(
+                TemplateVariableDeclaration("show", TemplateVariableType.BOOLEAN, required = false),
+                TemplateVariableDeclaration("name", TemplateVariableType.STRING, required = true),
+                TemplateVariableDeclaration("items", TemplateVariableType.LIST, required = false),
+            ),
+        )
+        val issues = TemplateRenderer.validate(t)
+        assertTrue(issues.isEmpty(), "Expected no issues but got: $issues")
+    }
+
+    @Test
+    fun `unclosed if block produces issue`() {
+        val t = template(
+            subject = "{{#if flag}}text",
+            variables = listOf(
+                TemplateVariableDeclaration("flag", TemplateVariableType.BOOLEAN, required = false),
+            ),
+        )
+        val issues = TemplateRenderer.validate(t)
+        assertEquals(1, issues.size)
+        assertEquals("subject", issues[0].location)
+        assertTrue(issues[0].message.contains("unclosed", ignoreCase = true))
+    }
+
+    @Test
+    fun `unclosed each block produces issue`() {
+        val t = template(
+            subject = "{{#each items}}{{.}}",
+            variables = listOf(
+                TemplateVariableDeclaration("items", TemplateVariableType.LIST, required = false),
+            ),
+        )
+        val issues = TemplateRenderer.validate(t)
+        assertTrue(issues.any { it.message.contains("unclosed", ignoreCase = true) }, "Expected an unclosed-block issue but got: $issues")
+    }
+
+    @Test
+    fun `orphaned closing tag produces issue`() {
+        val t = template(subject = "text{{/if}}")
+        val issues = TemplateRenderer.validate(t)
+        assertEquals(1, issues.size)
+        assertTrue(issues[0].message.contains("orphaned", ignoreCase = true))
+    }
+
+    @Test
+    fun `nested if blocks produce issue`() {
+        val t = template(
+            subject = "{{#if a}}{{#if b}}x{{/if}}{{/if}}",
+            variables = listOf(
+                TemplateVariableDeclaration("a", TemplateVariableType.BOOLEAN, required = false),
+                TemplateVariableDeclaration("b", TemplateVariableType.BOOLEAN, required = false),
+            ),
+        )
+        val issues = TemplateRenderer.validate(t)
+        assertEquals(1, issues.size)
+        assertTrue(issues[0].message.contains("not supported", ignoreCase = true))
+    }
+
+    @Test
+    fun `nested each blocks produce issue`() {
+        val t = template(
+            subject = "{{#each outer}}{{#each inner}}{{.}}{{/each}}{{/each}}",
+            variables = listOf(
+                TemplateVariableDeclaration("outer", TemplateVariableType.LIST, required = false),
+                TemplateVariableDeclaration("inner", TemplateVariableType.LIST, required = false),
+            ),
+        )
+        val issues = TemplateRenderer.validate(t)
+        assertTrue(issues.any { it.message.contains("not supported", ignoreCase = true) }, "Expected a nested-block issue but got: $issues")
+    }
+
+    @Test
+    fun `undeclared variable in each block tag produces issue`() {
+        val t = template(
+            subject = "{{#each reslts}}{{.}}{{/each}}",
+            variables = listOf(
+                TemplateVariableDeclaration("results", TemplateVariableType.LIST, required = false),
+            ),
+        )
+        val issues = TemplateRenderer.validate(t)
+        assertEquals(1, issues.size)
+        assertTrue(issues[0].message.contains("undeclared", ignoreCase = true))
+        assertTrue(issues[0].message.contains("reslts"))
+    }
+
+    @Test
+    fun `undeclared variable in if block tag produces issue`() {
+        val t = template(subject = "{{#if flg}}x{{/if}}")
+        val issues = TemplateRenderer.validate(t)
+        assertEquals(1, issues.size)
+        assertTrue(issues[0].message.contains("undeclared", ignoreCase = true))
+        assertTrue(issues[0].message.contains("flg"))
+    }
+
+    @Test
+    fun `duplicate variable declaration produces issue`() {
+        val t = template(
+            subject = "Hello {{name}}",
+            variables = listOf(
+                TemplateVariableDeclaration("name", TemplateVariableType.STRING, required = true),
+                TemplateVariableDeclaration("name", TemplateVariableType.STRING, required = false),
+            ),
+        )
+        val issues = TemplateRenderer.validate(t)
+        assertEquals(1, issues.size)
+        assertEquals("variables", issues[0].location)
+        assertTrue(issues[0].message.contains("duplicate", ignoreCase = true))
+    }
+
+    @Test
+    fun `dot placeholder outside each block produces issue`() {
+        val t = template(subject = "Value: {{.}}")
+        val issues = TemplateRenderer.validate(t)
+        assertEquals(1, issues.size)
+        assertTrue(issues[0].message.contains("{{#each}}"))
+    }
 }

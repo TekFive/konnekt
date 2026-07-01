@@ -95,4 +95,33 @@ class TemplateRendererIntegrationTest {
         assertEquals("Lab Results for Jane Doe — 04/11/2026", email.subject)
         assertEquals(result.htmlBody, email.body)
     }
+
+    @Test
+    fun `if guard around each block suppresses list markup when results are empty`() {
+        val template = MessageTemplate(
+            identifier = "results-guard",
+            name = "Results Guard",
+            subjectTemplate = "Results for {{patientName}}",
+            htmlBodyTemplate = "{{#if results}}<ul>{{#each results}}<li>{{.}}</li>{{/each}}</ul>{{/if}}",
+            textBodyTemplate = "{{#if results}}Results:{{#each results}} {{.}}{{/each}}{{/if}}",
+            variables = listOf(
+                TemplateVariableDeclaration("patientName", TemplateVariableType.STRING, required = true),
+                TemplateVariableDeclaration("results", TemplateVariableType.LIST, required = false),
+            ),
+        )
+
+        val empty = TemplateRenderer.render(
+            template,
+            mapOf("patientName" to "Jane Doe", "results" to emptyList<String>()),
+        )
+        assertEquals("", empty.htmlBody)
+        assertEquals("", empty.textBody)
+
+        val populated = TemplateRenderer.render(
+            template,
+            mapOf("patientName" to "Jane Doe", "results" to listOf("Hemoglobin: 8.2 g/dL")),
+        )
+        assertEquals("<ul><li>Hemoglobin: 8.2 g/dL</li></ul>", populated.htmlBody)
+        assertEquals("Results: Hemoglobin: 8.2 g/dL", populated.textBody)
+    }
 }

@@ -5,6 +5,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.tekfive.jfk.asRequiredJsonObject
+import org.tekfive.konnekt.message.MessageHttpClient
 import org.tekfive.konnekt.message.sms.providers.twilio.model.TwilioSmsSendRequest
 import org.tekfive.konnekt.message.sms.providers.twilio.model.TwilioSmsSendResponse
 import org.tekfive.konnekt.message.sms.providers.twilio.model.TwilioSmsStatusResponse
@@ -14,7 +15,7 @@ import org.tekfive.konnekt.message.sms.providers.twilio.model.TwilioSmsStatusRes
  */
 open class TwilioSmsClient(
     private val auth: TwilioSmsAuth,
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = MessageHttpClient.client,
     private val executeOverride: ((Request) -> TwilioSmsRawResponse)? = null,
 ) {
 
@@ -28,7 +29,8 @@ open class TwilioSmsClient(
         )
         val response = execute(request)
         if (!response.code.isSuccessful()) {
-            throw TwilioSmsException("Twilio SMS send failed with ${response.code}: ${response.body}")
+            // Never include the response body — Twilio error bodies echo the recipient phone number.
+            throw TwilioSmsException("Twilio SMS send failed with status ${response.code}", response.code)
         }
 
         val json = response.body.trim().takeIf { it.isNotBlank() }?.asRequiredJsonObject()
@@ -122,7 +124,8 @@ open class TwilioSmsClient(
         }
 
         if (!response.code.isSuccessful()) {
-            throw TwilioSmsException("Twilio SMS status lookup failed with ${response.code}: ${response.body}")
+            // Never include the response body — Twilio error bodies echo the recipient phone number.
+            throw TwilioSmsException("Twilio SMS status lookup failed with status ${response.code}", response.code)
         }
 
         return response

@@ -3,6 +3,7 @@ package org.tekfive.konnekt.message.email
 import org.tekfive.jfk.json
 import org.tekfive.konnekt.message.MessageAddress
 import org.tekfive.konnekt.message.MessageRecipient
+import org.tekfive.konnekt.message.MessagingException
 import org.tekfive.konnekt.message.QueuedMessage
 import org.tekfive.konnekt.message.QueuedMessageMetadata
 import java.net.InetSocketAddress
@@ -18,8 +19,11 @@ import kotlin.concurrent.thread
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import com.sun.net.httpserver.HttpServer
 
 class EmailServiceTest {
@@ -137,9 +141,145 @@ class EmailServiceTest {
             server.stop(0)
         }
     }
+
+    @Test
+    fun `sendgrid server error surfaces as recoverable messaging exception without response content`() {
+        val server = HttpServer.create(InetSocketAddress(0), 0)
+        try {
+            val responseBody = """{"errors":[{"message":"rejected recipient to@example.com"}]}"""
+            server.createContext("/v3/mail/send") { exchange ->
+                val bytes = responseBody.toByteArray(Charsets.UTF_8)
+                exchange.sendResponseHeaders(500, bytes.size.toLong())
+                exchange.responseBody.use { output ->
+                    output.write(bytes)
+                }
+                exchange.close()
+            }
+            server.start()
+
+            val exception = assertFailsWith<MessagingException> {
+                EmailService.send(plainEmailMessage(), buildSendGridEndpoint(server.address.port))
+            }
+
+            assertTrue(exception.recoverable)
+            assertFalse(exception.message.orEmpty().contains("to@example.com"))
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `sendgrid client error surfaces as non-recoverable messaging exception`() {
+        val server = HttpServer.create(InetSocketAddress(0), 0)
+        try {
+            server.createContext("/v3/mail/send") { exchange ->
+                exchange.sendResponseHeaders(400, -1)
+                exchange.close()
+            }
+            server.start()
+
+            val exception = assertFailsWith<MessagingException> {
+                EmailService.send(plainEmailMessage(), buildSendGridEndpoint(server.address.port))
+            }
+
+            assertFalse(exception.recoverable)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `invalid smtp recipient surfaces as non-recoverable messaging exception without the address`() {
+        val endpoint = buildSmtpEndpoint(port = 1)
+        val injectedAddress = "victim@example.com\r\nBcc: attacker@evil.com"
+        val message = EmailMessage(
+            to = listOf(MessageRecipient(injectedAddress)),
+            from = MessageAddress("sender@example.com", "Sender"),
+            subject = "Subject",
+            body = "Body",
+            contentType = EmailMessage.TEXT_CONTENT_TYPE,
+        )
+
+        val exception = assertFailsWith<MessagingException> {
+            EmailService.send(message, endpoint)
+        }
+
+        assertFalse(exception.recoverable)
+        assertFalse(exception.message.orEmpty().contains("attacker@evil.com"))
+        assertFalse(exception.message.orEmpty().contains("victim@example.com"))
+    }
+
+    @Test
+    fun `attachments over the configuration limit are rejected before dispatch`() {
+        val endpoint = buildSmtpEndpoint(port = 1, maxAttachmentsSizeBytes = 10)
+        val message = emailMessageWithAttachment("report.pdf", ByteArray(32))
+
+        val exception = assertFailsWith<MessagingException> {
+            EmailService.send(message, endpoint)
+        }
+
+        assertFalse(exception.recoverable)
+        assertTrue(exception.message.orEmpty().contains("32"))
+        assertTrue(exception.message.orEmpty().contains("10"))
+        assertFalse(exception.message.orEmpty().contains("report.pdf"))
+    }
+
+    @Test
+    fun `attachments within the configuration limit are sent`() {
+        val smtpServer = FakeSmtpServer.start()
+        try {
+            val endpoint = buildSmtpEndpoint(smtpServer.port, maxAttachmentsSizeBytes = 1024)
+
+            val response = EmailService.send(emailMessageWithAttachment("report.pdf", ByteArray(32)), endpoint)
+
+            assertEquals(EmailStatus.SENT, response.status)
+        } finally {
+            smtpServer.close()
+        }
+    }
+
+    @Test
+    fun `attachments fall back to the global default limit when the configuration has none`() {
+        val endpoint = buildSmtpEndpoint(port = 1)
+        val overDefaultLimit = ByteArray(EmailService.maxAttachmentsSizeBytesAck().toInt() + 1)
+
+        val exception = assertFailsWith<MessagingException> {
+            EmailService.send(emailMessageWithAttachment("report.pdf", overDefaultLimit), endpoint)
+        }
+
+        assertFalse(exception.recoverable)
+        assertFalse(exception.message.orEmpty().contains("report.pdf"))
+    }
 }
 
-private fun buildSmtpEndpoint(port: Int): EmailProviderTypeConfiguration {
+private fun emailMessageWithAttachment(fileName: String, content: ByteArray): EmailMessage {
+    return EmailMessage(
+        to = listOf(MessageRecipient("to@example.com", "To")),
+        from = MessageAddress("sender@example.com", "Sender"),
+        subject = "Subject",
+        body = "Body",
+        contentType = EmailMessage.TEXT_CONTENT_TYPE,
+        attachments = listOf(
+            EmailAttachment(
+                fileName = fileName,
+                contentType = "application/pdf",
+                content = content,
+            ),
+        ),
+    )
+}
+
+private fun plainEmailMessage(): EmailMessage {
+    return EmailMessage(
+        to = listOf(MessageRecipient("to@example.com", "To")),
+        from = MessageAddress("sender@example.com", "Sender"),
+        subject = "Subject",
+        body = "Body",
+        contentType = EmailMessage.TEXT_CONTENT_TYPE,
+    )
+}
+
+private fun buildSmtpEndpoint(port: Int, maxAttachmentsSizeBytes: Long? = null): EmailProviderTypeConfiguration {
     return EmailProviderTypeConfiguration(
         id = "smtp-endpoint",
         type = EmailProviderType.SMTP,
@@ -150,6 +290,7 @@ private fun buildSmtpEndpoint(port: Int): EmailProviderTypeConfiguration {
             "sslEnabled" set false
             "authenticate" set false
         },
+        maxAttachmentsSizeBytes = maxAttachmentsSizeBytes,
     )
 }
 

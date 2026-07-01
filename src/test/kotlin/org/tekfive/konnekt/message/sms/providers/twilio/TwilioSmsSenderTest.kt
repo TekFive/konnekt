@@ -19,6 +19,21 @@ class TwilioSmsSenderTest {
     }
 
     @Test
+    fun `twilio sms sender maps whatsapp read status to delivered`() {
+        assertEquals(SmsStatus.DELIVERED, TwilioSmsSender.mapStatus("read"))
+    }
+
+    @Test
+    fun `twilio sms sender maps partially delivered status to sent`() {
+        assertEquals(SmsStatus.SENT, TwilioSmsSender.mapStatus("partially_delivered"))
+    }
+
+    @Test
+    fun `twilio sms sender leaves inbound-only statuses unmapped`() {
+        assertEquals(SmsStatus.UNKNOWN, TwilioSmsSender.mapStatus("received"))
+    }
+
+    @Test
     fun `twilio sms sender rejects multiple recipients`() {
         val exception = assertFailsWith<TwilioSmsException> {
             TwilioSmsSender.send(

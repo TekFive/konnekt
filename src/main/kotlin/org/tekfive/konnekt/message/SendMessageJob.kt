@@ -35,7 +35,6 @@ class SendMessageJob : Job {
                     recipientAddress = recipientAddress,
                     status = MessageReceiptStatus.WAITING,
                     details = receiptDetailsString,
-                    createdAt = System.currentTimeMillis()
                 )
             }
         }
@@ -58,7 +57,7 @@ class SendMessageJob : Job {
         }
 
         if (queuedMessage.state != QueuedMessageState.PENDING) {
-            return JobFailed("Queued message is in already in completed state ${queuedMessage.state}")
+            return JobFailed("Queued message $queuedMessageId is not in PENDING state (state=${queuedMessage.state}).")
         }
 
         val attempt = db {
@@ -76,7 +75,7 @@ class SendMessageJob : Job {
             queuedMessage.state = QueuedMessageState.PROCESSING
             queuedMessage.attemptCount += 1
             queuedMessage.lastStateChangeAt = now
-            SendMessageAttemptTable.create(SendMessageAttempt(queuedMessageId, SendMessageAttemptState.SENDING, null, System.currentTimeMillis()))
+            SendMessageAttemptTable.create(SendMessageAttempt(queuedMessageId, SendMessageAttemptState.SENDING))
         }
 
         var result: JobResult = JobCompleted()
@@ -100,36 +99,45 @@ class SendMessageJob : Job {
             attempt.state = SendMessageAttemptState.SENT
 
             if (messageReceiptDetails != null) {
-                val messageReceipts = buildMessageReceipts(queuedMessageId, queuedMessage, messageReceiptDetails)
-                for (messageReceipt in messageReceipts) {
-                    MessageReceiptTable.create(messageReceipt)
+                try {
+                    val messageReceipts = buildMessageReceipts(queuedMessageId, queuedMessage, messageReceiptDetails)
+                    for (messageReceipt in messageReceipts) {
+                        MessageReceiptTable.create(messageReceipt)
+                    }
+                } catch (e: Exception) {
+                    // The message was delivered; a receipt-persistence failure must not flip it to FAILED.
+                    context.log.error("Failed to persist message receipts for message ${queuedMessage.id}", e)
+                    result = JobFailed("Failed to persist message receipts for message ${queuedMessage.id}")
                 }
             }
 
-
-        } catch (e : Exception) {
-            if (e is MessagingException) {
-                attempt.state = SendMessageAttemptState.FAILED
-                attempt.details = e.message
-                if (e.recoverable) {
-                    context.log.error("Failed to send message ${queuedMessage.id} but from recoverable error.", e)
-                    if (queuedMessage.attemptCount < queuedMessage.maxAttempts) {
-                        queuedMessage.state = QueuedMessageState.FAILED_WAITING_TO_RETRY
-                    } else {
-                        queuedMessage.state = QueuedMessageState.FAILED
-                    }
+        } catch (e: Exception) {
+            attempt.state = SendMessageAttemptState.FAILED
+            attempt.details = e.message
+            val recoverable = e is MessagingException && e.recoverable
+            if (recoverable) {
+                context.log.error("Failed to send message ${queuedMessage.id} from a recoverable error.", e)
+                if (queuedMessage.attemptCount < queuedMessage.maxAttempts) {
+                    queuedMessage.state = QueuedMessageState.FAILED_WAITING_TO_RETRY
                 } else {
-                    context.log.error("Failed to send message ${queuedMessage.id}", e)
                     queuedMessage.state = QueuedMessageState.FAILED
                 }
-                result = JobFailed(e.message ?: "Failed to send queued message.")
             } else {
-                queuedMessage.state = QueuedMessageState.FAILED
                 context.log.error("Failed to send message ${queuedMessage.id}", e)
-                result = JobFailed(e.message ?: "Failed to send queued message.")
+                queuedMessage.state = QueuedMessageState.FAILED
             }
+            result = JobFailed(e.message ?: "Failed to send queued message.")
         } finally {
-            QueuedMessageTable.update(queuedMessage)
+            // Guard on PROCESSING so a concurrent external transition (e.g. the queue processor
+            // marking a stalled message TIMED_OUT) is not clobbered or resurrected.
+            val updated = QueuedMessageTable.update({ (QueuedMessageTable.id eq queuedMessageId) and (QueuedMessageTable.state eq QueuedMessageState.PROCESSING) }) { statement ->
+                statement[QueuedMessageTable.state] = queuedMessage.state
+                statement[QueuedMessageTable.lastStateChangeAt] = queuedMessage.lastStateChangeAt
+                statement[QueuedMessageTable.receiptDetails] = queuedMessage.receiptDetails
+            }
+            if (updated != 1) {
+                context.log.error("Queued message ${queuedMessage.id} was externally transitioned while sending; final state ${queuedMessage.state} was not recorded.")
+            }
             attempt.endedAt = System.currentTimeMillis()
             SendMessageAttemptTable.update(attempt)
         }

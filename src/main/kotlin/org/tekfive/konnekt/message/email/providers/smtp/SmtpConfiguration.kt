@@ -20,4 +20,10 @@ data class SmtpConfiguration(
 
     val shouldAuthenticate: Boolean
         get() = authenticate && !username.isNullOrBlank() && !password.isNullOrBlank()
+
+    override fun toString(): String {
+        return "SmtpConfiguration(host=$host, port=$port, startTls=$startTls, sslEnabled=$sslEnabled, " +
+            "connectionTimeoutMSecs=$connectionTimeoutMSecs, timeoutMSecs=$timeoutMSecs, " +
+            "writeTimeoutMSecs=$writeTimeoutMSecs, authenticate=$authenticate, username=$username, password=REDACTED)"
+    }
 }

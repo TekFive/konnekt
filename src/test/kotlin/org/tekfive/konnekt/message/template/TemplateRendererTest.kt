@@ -117,7 +117,16 @@ class TemplateRendererTest {
     }
 
     @Test
-    fun `template with stale validation issues that resolve renders and clears issues`() {
+    fun `invalid template with empty stored validation issues still throws`() {
+        // Stored validation state must not bypass fresh validation.
+        val t = template(subject = "Hello {{unknown}}", validationIssues = emptyList())
+        assertFailsWith<TemplateValidationException> {
+            TemplateRenderer.render(t, emptyMap())
+        }
+    }
+
+    @Test
+    fun `template with stale validation issues that resolve renders without mutating stored issues`() {
         val t = template(
             subject = "Hello {{name}}",
             htmlBody = "<p>Hello {{name}}</p>",
@@ -131,7 +140,7 @@ class TemplateRendererTest {
         )
         val result = TemplateRenderer.render(t, mapOf("name" to "Alice"))
         assertEquals("Hello Alice", result.subject)
-        assertTrue(t.validationIssues.isEmpty(), "Expected stale issues to be cleared")
+        assertEquals(1, t.validationIssues.size, "Expected render not to mutate stored validation issues")
     }
 
     @Test
@@ -312,5 +321,114 @@ class TemplateRendererTest {
         )
         val result = TemplateRenderer.render(t, mapOf("items" to listOf("<b>bold</b>", "A & B")))
         assertEquals("<b>bold</b>\nA & B\n", result.textBody)
+    }
+
+    // --- Truthiness (Handlebars semantics) ---
+
+    @Test
+    fun `empty list is falsy for if block`() {
+        val t = template(
+            subject = "{{#if results}}Has results{{/if}}",
+            variables = listOf(
+                TemplateVariableDeclaration("results", TemplateVariableType.LIST, required = false),
+            ),
+        )
+        assertEquals("", TemplateRenderer.render(t, mapOf("results" to emptyList<String>())).subject)
+        assertEquals("Has results", TemplateRenderer.render(t, mapOf("results" to listOf("a"))).subject)
+    }
+
+    @Test
+    fun `zero number is falsy for if block`() {
+        val t = template(
+            subject = "{{#if count}}Nonzero{{/if}}",
+            variables = listOf(
+                TemplateVariableDeclaration("count", TemplateVariableType.NUMBER, required = false),
+            ),
+        )
+        assertEquals("", TemplateRenderer.render(t, mapOf("count" to 0)).subject)
+        assertEquals("", TemplateRenderer.render(t, mapOf("count" to 0.0)).subject)
+        assertEquals("Nonzero", TemplateRenderer.render(t, mapOf("count" to 5)).subject)
+    }
+
+    @Test
+    fun `if guard around each block skips empty list`() {
+        val t = template(
+            subject = "{{#if results}}Results:{{#each results}} {{.}}{{/each}}{{/if}}",
+            variables = listOf(
+                TemplateVariableDeclaration("results", TemplateVariableType.LIST, required = false),
+            ),
+        )
+        assertEquals("", TemplateRenderer.render(t, mapOf("results" to emptyList<String>())).subject)
+        assertEquals(
+            "Results: a b",
+            TemplateRenderer.render(t, mapOf("results" to listOf("a", "b"))).subject,
+        )
+    }
+
+    // --- Injection safety ---
+
+    @Test
+    fun `variable value containing placeholder syntax renders literally`() {
+        val t = template(
+            subject = "Note: {{note}}",
+            textBody = "Note: {{note}}",
+            variables = listOf(
+                TemplateVariableDeclaration("note", TemplateVariableType.STRING, required = true),
+                TemplateVariableDeclaration("otherVar", TemplateVariableType.STRING, required = false),
+            ),
+        )
+        val result = TemplateRenderer.render(
+            t,
+            mapOf("note" to "see {{otherVar}}", "otherVar" to "SECRET"),
+        )
+        assertEquals("Note: see {{otherVar}}", result.subject)
+        assertEquals("Note: see {{otherVar}}", result.textBody)
+    }
+
+    @Test
+    fun `loop item containing placeholder syntax renders literally`() {
+        val t = template(
+            textBody = "{{#each items}}{{.}}\n{{/each}}",
+            variables = listOf(
+                TemplateVariableDeclaration("items", TemplateVariableType.LIST, required = true),
+                TemplateVariableDeclaration("otherVar", TemplateVariableType.STRING, required = false),
+            ),
+        )
+        val result = TemplateRenderer.render(
+            t,
+            mapOf("items" to listOf("first {{otherVar}}", "second"), "otherVar" to "SECRET"),
+        )
+        assertEquals("first {{otherVar}}\nsecond\n", result.textBody)
+    }
+
+    // --- Whitespace-tolerant block tags ---
+
+    @Test
+    fun `block tags tolerate whitespace`() {
+        val t = template(
+            subject = "{{#if show }}Yes{{/if }} {{ #each items }}{{.}}{{/each }}",
+            variables = listOf(
+                TemplateVariableDeclaration("show", TemplateVariableType.BOOLEAN, required = false),
+                TemplateVariableDeclaration("items", TemplateVariableType.LIST, required = false),
+            ),
+        )
+        val result = TemplateRenderer.render(t, mapOf("show" to true, "items" to listOf("a", "b")))
+        assertEquals("Yes ab", result.subject)
+    }
+
+    // --- Subject control characters ---
+
+    @Test
+    fun `control characters stripped from subject but not bodies`() {
+        val t = template(
+            subject = "Alert: {{note}}",
+            textBody = "Note: {{note}}",
+            variables = listOf(
+                TemplateVariableDeclaration("note", TemplateVariableType.STRING, required = true),
+            ),
+        )
+        val result = TemplateRenderer.render(t, mapOf("note" to "line1\r\nBcc: evil@example.com"))
+        assertEquals("Alert: line1Bcc: evil@example.com", result.subject)
+        assertEquals("Note: line1\r\nBcc: evil@example.com", result.textBody)
     }
 }

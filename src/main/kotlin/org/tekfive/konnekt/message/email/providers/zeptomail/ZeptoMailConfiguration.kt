@@ -27,4 +27,8 @@ data class ZeptoMailConfiguration(
 
     val normalizedBaseUrl: String
         get() = (baseUrl ?: DEFAULT_BASE_URL).trimEnd('/')
+
+    override fun toString(): String {
+        return "ZeptoMailConfiguration(sendMailToken=REDACTED, oauthAccessToken=REDACTED, baseUrl=$baseUrl)"
+    }
 }

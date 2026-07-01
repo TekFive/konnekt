@@ -63,9 +63,13 @@ object TwilioSmsSender : SmsSender {
     fun mapStatus(status: String?): SmsStatus {
         return when (status?.lowercase()) {
             "accepted", "queued", "scheduled" -> SmsStatus.QUEUED
-            "sending", "sent" -> SmsStatus.SENT
-            "delivered" -> SmsStatus.DELIVERED
+            // partially_delivered: some segments reached the handset but delivery is incomplete,
+            // so report the conservative SENT rather than DELIVERED.
+            "sending", "sent", "partially_delivered" -> SmsStatus.SENT
+            // read: WhatsApp-channel receipt — the message reached the recipient.
+            "delivered", "read" -> SmsStatus.DELIVERED
             "failed", "undelivered", "canceled" -> SmsStatus.FAILED
+            // Inbound-only statuses (receiving, received) intentionally fall through to UNKNOWN.
             else -> SmsStatus.UNKNOWN
         }
     }

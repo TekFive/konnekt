@@ -21,6 +21,7 @@ import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
@@ -61,7 +62,15 @@ class EmailSmtpServiceTest {
         val props = SmtpEmailProvider.buildSessionProperties(config)
 
         assertEquals("true", props["mail.smtp.starttls.enable"])
+        assertEquals("true", props["mail.smtp.starttls.required"])
         assertEquals("false", props["mail.smtp.ssl.enable"])
+    }
+
+    @Test
+    fun `server identity checking is always enabled`() {
+        val props = SmtpEmailProvider.buildSessionProperties(smtpConfiguration(host = "smtp.example.com"))
+
+        assertEquals("true", props["mail.smtp.ssl.checkserveridentity"])
     }
 
     @Test
@@ -187,6 +196,77 @@ class EmailSmtpServiceTest {
         val mime = SmtpEmailProvider.buildMimeMessage(message, session)
 
         assertEquals("Body", mime.content)
+    }
+
+    @Test
+    fun `buildMimeMessage rejects line breaks in recipient address without leaking the address`() {
+        val session = Session.getInstance(Properties())
+        val injectedAddress = "victim@example.com\r\nBcc: attacker@evil.com"
+        val message = EmailMessage(
+            to = listOf(MessageRecipient(injectedAddress)),
+            from = MessageAddress("sender@example.com", "Sender"),
+            subject = "Subject",
+            body = "Body",
+            contentType = EmailMessage.TEXT_CONTENT_TYPE,
+        )
+
+        val exception = assertFailsWith<IllegalArgumentException> {
+            SmtpEmailProvider.buildMimeMessage(message, session)
+        }
+
+        assertFalse(exception.message.orEmpty().contains("attacker@evil.com"))
+        assertFalse(exception.message.orEmpty().contains("victim@example.com"))
+    }
+
+    @Test
+    fun `buildMimeMessage rejects invalid address without leaking the address`() {
+        val session = Session.getInstance(Properties())
+        val message = EmailMessage(
+            to = listOf(MessageRecipient("not an address")),
+            from = MessageAddress("sender@example.com", "Sender"),
+            subject = "Subject",
+            body = "Body",
+            contentType = EmailMessage.TEXT_CONTENT_TYPE,
+        )
+
+        val exception = assertFailsWith<IllegalArgumentException> {
+            SmtpEmailProvider.buildMimeMessage(message, session)
+        }
+
+        assertFalse(exception.message.orEmpty().contains("not an address"))
+    }
+
+    @Test
+    fun `buildMimeMessage strips line breaks from subject and display name`() {
+        val session = Session.getInstance(Properties())
+        val message = EmailMessage(
+            to = listOf(MessageRecipient("to@example.com", "To\r\nBcc: attacker@evil.com")),
+            from = MessageAddress("sender@example.com", "Sender"),
+            subject = "Subject\r\nBcc: attacker@evil.com",
+            body = "Body",
+            contentType = EmailMessage.TEXT_CONTENT_TYPE,
+        )
+
+        val mime = SmtpEmailProvider.buildMimeMessage(message, session)
+
+        assertEquals("SubjectBcc: attacker@evil.com", mime.subject)
+        assertNull(mime.getHeader("Bcc"))
+    }
+
+    @Test
+    fun `buildMimeMessage rejects line breaks in content type`() {
+        val session = Session.getInstance(Properties())
+        val message = EmailMessage(
+            to = listOf(MessageRecipient("to@example.com", "To")),
+            from = MessageAddress("sender@example.com", "Sender"),
+            subject = "Subject",
+            body = "Body",
+            contentType = "text/plain\r\nBcc: attacker@evil.com",
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            SmtpEmailProvider.buildMimeMessage(message, session)
+        }
     }
 
     @Test

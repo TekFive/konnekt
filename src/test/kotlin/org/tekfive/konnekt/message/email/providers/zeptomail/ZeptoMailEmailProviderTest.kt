@@ -14,6 +14,7 @@ import java.util.Base64
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class ZeptoMailEmailProviderTest {
 
@@ -88,5 +89,48 @@ class ZeptoMailEmailProviderTest {
         assertEquals("report.pdf", attachment?.name)
         assertEquals("application/pdf", attachment?.mimeType)
         assertEquals(Base64.getEncoder().encodeToString("PDFDATA".toByteArray(Charsets.UTF_8)), attachment?.content)
+    }
+
+    @Test
+    fun `zeptomail provider treats html content type with parameters as html body`() {
+        val captured = sendCapturingRequest(contentType = "TEXT/HTML; charset=UTF-8", body = "<p>Body</p>")
+
+        assertEquals("<p>Body</p>", captured?.htmlBody)
+        assertNull(captured?.textBody)
+    }
+
+    @Test
+    fun `zeptomail provider treats non-html content type as plain text`() {
+        val captured = sendCapturingRequest(contentType = "text/plain; charset=UTF-8", body = "Body")
+
+        assertEquals("Body", captured?.textBody)
+        assertNull(captured?.htmlBody)
+    }
+
+    private fun sendCapturingRequest(contentType: String, body: String): ZeptoMailSendRequest? {
+        var captured: ZeptoMailSendRequest? = null
+        ZeptoMailEmailProvider.clientFactory = { auth ->
+            object : ZeptoMailClient(auth) {
+                override fun sendMail(requestBody: ZeptoMailSendRequest): ZeptoMailSendResponse {
+                    captured = requestBody
+                    return ZeptoMailSendResponse(status = "success")
+                }
+            }
+        }
+
+        ZeptoMailEmailProvider.send(
+            message = EmailMessage(
+                to = listOf(MessageRecipient("to@example.com", "To")),
+                from = MessageAddress("from@example.com", "From"),
+                subject = "Subject",
+                body = body,
+                contentType = contentType,
+            ),
+            configuration = json {
+                "sendMailToken" set "token"
+            },
+        )
+
+        return captured
     }
 }

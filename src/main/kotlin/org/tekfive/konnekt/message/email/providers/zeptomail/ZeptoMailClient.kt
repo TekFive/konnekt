@@ -9,17 +9,17 @@ import okhttp3.Response
 import org.tekfive.jfk.JsonObject
 import org.tekfive.jfk.asRequiredJsonObject
 import org.tekfive.konnekt.HttpStatusException
+import org.tekfive.konnekt.message.MessageHttpClient
 import org.tekfive.konnekt.message.email.providers.zeptomail.model.ZeptoMailEmailStatusResponse
 import org.tekfive.konnekt.message.email.providers.zeptomail.model.ZeptoMailSendRequest
 import org.tekfive.konnekt.message.email.providers.zeptomail.model.ZeptoMailSendResponse
-import java.io.IOException
 
 /**
  * Minimal ZeptoMail client for the send-mail and email-status APIs.
  */
 open class ZeptoMailClient(
     private val auth: ZeptoMailConfiguration,
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = MessageHttpClient.client,
     private val executeOverride: ((Request) -> Response)? = null,
 ) {
 
@@ -94,7 +94,7 @@ open class ZeptoMailClient(
     private fun execute(request: Request, errorMessage: String): Response {
         val response = executeRaw(request)
         if (!response.code.isSuccessful()) {
-            throw IOException("$errorMessage with ${response.code}: ${response.body}")
+            throw failWithStatus(response, errorMessage)
         }
         return response
     }
@@ -102,12 +102,23 @@ open class ZeptoMailClient(
     private fun executeOrNull(request: Request, errorMessage: String): Response? {
         val response = executeRaw(request)
         if (response.code == 404) {
+            response.close()
             return null
         }
         if (!response.code.isSuccessful()) {
-            throw HttpStatusException(response)
+            throw failWithStatus(response, errorMessage)
         }
         return response
+    }
+
+    /**
+     * Closes the failed [response] and returns a scrubbed exception carrying only the HTTP
+     * status code — never the response body, which may echo recipient or message content.
+     */
+    private fun failWithStatus(response: Response, errorMessage: String): HttpStatusException {
+        val statusCode = response.code
+        response.close()
+        return HttpStatusException(statusCode, null, "$errorMessage with HTTP status $statusCode.")
     }
 
     private fun executeRaw(request: Request): Response {

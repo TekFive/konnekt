@@ -6,4 +6,7 @@ enum class TeamMessageStatus {
     DELIVERED,
     READ,
     FAILED,
+
+    /** The provider does not support status lookup, or returned a status this library does not recognize. */
+    UNKNOWN,
 }

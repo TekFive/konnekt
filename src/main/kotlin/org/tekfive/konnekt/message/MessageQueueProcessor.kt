@@ -2,11 +2,8 @@ package org.tekfive.konnekt.message
 
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.inList
-import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.lessEq
-import org.jetbrains.exposed.v1.core.Op
-import org.jetbrains.exposed.v1.core.QueryBuilder
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.select
@@ -21,6 +18,7 @@ import org.tekfive.keep.job.db.JobRecordsTable
 
 object MessageQueueProcessor : Runnable {
 
+    @Volatile
     private var processThread: Thread? = null
 
     val pollSleepSecsAck = Ack.int("POLL_SLEEP_SECONDS", 20, namespace = "MQP", description = "Seconds the message queue processor sleeps between polls.")
@@ -42,15 +40,17 @@ object MessageQueueProcessor : Runnable {
     }
 
     fun stop(joinTimeoutSeconds: Int = 15) {
-        val thread = processThread
-        processThread = null
+        val thread: Thread?
+        synchronized(startKey) {
+            thread = processThread
+            processThread = null
+        }
         if (thread != null) {
             thread.interrupt()
             thread.join(joinTimeoutSeconds * 1000L)
         }
     }
 
-    @Synchronized
     override fun run() {
         while (processThread == Thread.currentThread()) {
             var sleepBeforeNextPoll = true
@@ -61,16 +61,16 @@ object MessageQueueProcessor : Runnable {
                 val retryCutoffAt = now - defaultMinWaitRetryMSecs
 
                 db {
-                    QueuedMessageTable.select(QueuedMessageTable.id, QueuedMessageTable.state).where {
+                    val readyMessages = QueuedMessageTable.select(QueuedMessageTable.id, QueuedMessageTable.state).where {
 
                         (QueuedMessageTable.deliverAfter.isNull() or (QueuedMessageTable.deliverAfter lessEq now)) and
                                 ((QueuedMessageTable.state eq QueuedMessageState.QUEUED) or
                                         ((QueuedMessageTable.state eq QueuedMessageState.FAILED_WAITING_TO_RETRY) and (QueuedMessageTable.lastStateChangeAt lessEq retryCutoffAt))
                                 )
-                    }.forEach { row ->
+                    }.map { row -> row[QueuedMessageTable.id] to row[QueuedMessageTable.state] }
+
+                    for ((queuedMessageId, state) in readyMessages) {
                         sleepBeforeNextPoll = false
-                        val queuedMessageId = row[QueuedMessageTable.id]
-                        val state = row[QueuedMessageTable.state]
 
                         val updated = QueuedMessageTable.update({ (QueuedMessageTable.id eq queuedMessageId) and (QueuedMessageTable.state eq state) }) { statement ->
                             statement[QueuedMessageTable.state] = QueuedMessageState.PENDING
@@ -85,30 +85,46 @@ object MessageQueueProcessor : Runnable {
                     val maxPendingProcessingMSecs = maxPendingProcessingMinutesAck() * 60_000L
                     val pendingProcessingCutoffAt = now - maxPendingProcessingMSecs
 
-                    QueuedMessageTable.select(QueuedMessageTable.id, QueuedMessageTable.state).where {
+                    val stalledMessages = QueuedMessageTable.select(QueuedMessageTable.id, QueuedMessageTable.state).where {
                         (QueuedMessageTable.state inList listOf(QueuedMessageState.PENDING, QueuedMessageState.PROCESSING)) and
                                 (QueuedMessageTable.lastStateChangeAt lessEq pendingProcessingCutoffAt)
-                    }.forEach { row ->
-                        val queuedMessageId = row[QueuedMessageTable.id]
-                        val state = row[QueuedMessageTable.state]
-                        QueuedMessageTable.update({ (QueuedMessageTable.id eq queuedMessageId) and (QueuedMessageTable.state eq state) }) { statement ->
-                            sleepBeforeNextPoll = false
-                            statement[QueuedMessageTable.state] = QueuedMessageState.TIMED_OUT
+                    }.map { row -> row[QueuedMessageTable.id] to row[QueuedMessageTable.state] }
+
+                    for ((queuedMessageId, state) in stalledMessages) {
+                        sleepBeforeNextPoll = false
+
+                        // A stalled PENDING message never started sending (its job never claimed it),
+                        // so re-queueing cannot double-send. A stalled PROCESSING message has an
+                        // unknown send outcome, so it is conservatively timed out.
+                        val newState = if (state == QueuedMessageState.PENDING) QueuedMessageState.QUEUED else QueuedMessageState.TIMED_OUT
+
+                        val updated = QueuedMessageTable.update({ (QueuedMessageTable.id eq queuedMessageId) and (QueuedMessageTable.state eq state) }) { statement ->
+                            statement[QueuedMessageTable.state] = newState
                             statement[QueuedMessageTable.lastStateChangeAt] = System.currentTimeMillis()
                         }
-                        dbCommit()
+                        if (updated == 1) {
+                            if (newState == QueuedMessageState.TIMED_OUT) {
+                                log.warn("Queued message {} stalled in PROCESSING and was timed out.", queuedMessageId)
+                            } else {
+                                log.warn("Queued message {} stalled in PENDING and was re-queued.", queuedMessageId)
+                            }
+                            dbCommit()
+                        }
                     }
                 }
             } catch (e: Exception) {
                 sleepBeforeNextPoll = true
-                log.error("MessageQueueProcess exception while processing queued messages: ${e.message}", e)
+                log.error("MessageQueueProcessor exception while processing queued messages.", e)
             }
 
             if (processThread == Thread.currentThread() && sleepBeforeNextPoll) {
                 try {
                     val pollMSecs = pollSleepSecsAck() * 1000L
                     Thread.sleep(pollMSecs)
-                } catch (e: InterruptedException) {}
+                } catch (e: InterruptedException) {
+                    // Interrupt is the stop signal; the loop condition decides whether to exit.
+                    log.debug("MessageQueueProcessor poll sleep interrupted.")
+                }
             }
         }
     }

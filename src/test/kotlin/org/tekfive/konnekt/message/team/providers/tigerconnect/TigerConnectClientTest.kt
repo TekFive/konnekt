@@ -1,7 +1,10 @@
 package org.tekfive.konnekt.message.team.providers.tigerconnect
 
+import okhttp3.HttpUrl
+import org.tekfive.konnekt.message.team.providers.tigerconnect.model.TigerConnectSendRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class TigerConnectClientTest {
@@ -12,6 +15,15 @@ class TigerConnectClientTest {
 
         assertTrue(auth.authorizationHeader.startsWith("Basic "))
         assertEquals("https://example.test", auth.normalizedBaseUrl)
+    }
+
+    @Test
+    fun `auth toString does not expose the key or secret`() {
+        val auth = TigerConnectAuth("super-secret-key", "super-secret-value")
+
+        val rendered = auth.toString()
+        assertFalse(rendered.contains("super-secret-key"))
+        assertFalse(rendered.contains("super-secret-value"))
     }
 
     @Test
@@ -28,7 +40,7 @@ class TigerConnectClientTest {
         )
 
         val response = client.sendMessage(
-            org.tekfive.konnekt.message.team.providers.tigerconnect.model.TigerConnectSendRequest(
+            TigerConnectSendRequest(
                 targetType = "user",
                 targetId = "u-1",
                 body = "hello",
@@ -55,5 +67,40 @@ class TigerConnectClientTest {
 
         assertEquals("/message/m-1/status", capturedPath)
         assertEquals("read", response.status)
+    }
+
+    @Test
+    fun `query parameter values are url encoded`() {
+        var capturedUrl: HttpUrl? = null
+        val client = TigerConnectClient(
+            auth = TigerConnectAuth("key", "secret", "https://example.test"),
+            executeOverride = { request ->
+                capturedUrl = request.url
+                """{"users":[]}"""
+            },
+        )
+
+        client.findUserByEmail("first last+tag@example.com")
+
+        // The value must round-trip through the URL intact, which requires proper encoding.
+        assertEquals("first last+tag@example.com", capturedUrl!!.queryParameter("email"))
+        assertFalse(capturedUrl.toString().contains(' '))
+    }
+
+    @Test
+    fun `message id path segment is url encoded`() {
+        var capturedUrl: HttpUrl? = null
+        val client = TigerConnectClient(
+            auth = TigerConnectAuth("key", "secret", "https://example.test"),
+            executeOverride = { request ->
+                capturedUrl = request.url
+                """{"messageId":"m 1/x","status":"read"}"""
+            },
+        )
+
+        client.getMessageStatus("m 1/x")
+
+        // A slash inside the id must not create extra path segments.
+        assertEquals(listOf("message", "m 1/x", "status"), capturedUrl!!.pathSegments)
     }
 }

@@ -16,6 +16,20 @@ class QueuedSmsMessage(
     val maxAttempts: Int? = null,
 ) {
 
+    init {
+        // Fail fast at queue time: the SMS senders deliver to exactly one recipient, so a
+        // multi-recipient message would otherwise sit in the queue and fail at send time.
+        // Validation messages must never include the address values (persisted/logged).
+        require(to.size == 1) { "SMS messages require exactly one recipient, got ${to.size}" }
+        requireUsableAddress(to.single().address, "recipient")
+        requireUsableAddress(from.address, "from")
+    }
+
+    private fun requireUsableAddress(address: String, role: String) {
+        require(address.isNotBlank()) { "SMS $role address must not be blank" }
+        require(address.trim() == address) { "SMS $role address must not have leading or trailing whitespace" }
+    }
+
     internal fun toQueuedMessage(): QueuedMessage {
         val smsMessage = SmsMessage(
             to = to,

@@ -6,6 +6,9 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class TemplateRendererFormatTest {
 
@@ -131,6 +134,22 @@ class TemplateRendererFormatTest {
         )
         val result = TemplateRenderer.render(t, mapOf("count" to 42))
         assertEquals("Count: 42", result.subject)
+    }
+
+    @Test
+    fun `mismatched temporal pattern throws TemplateRenderException naming variable and pattern only`() {
+        val t = template(
+            subject = "Time: {{date|HH:mm}}",
+            variables = listOf(
+                TemplateVariableDeclaration("date", TemplateVariableType.TEMPORAL, required = true),
+            ),
+        )
+        val ex = assertFailsWith<TemplateRenderException> {
+            TemplateRenderer.render(t, mapOf("date" to LocalDate.of(2026, 4, 11)))
+        }
+        assertTrue(ex.message!!.contains("date"))
+        assertTrue(ex.message!!.contains("HH:mm"))
+        assertFalse(ex.message!!.contains("2026"), "Exception message must never contain the value")
     }
 
     @Test

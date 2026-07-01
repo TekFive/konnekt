@@ -2,6 +2,7 @@ package org.tekfive.konnekt.message
 
 import org.tekfive.jfk.JsonObject
 import org.tekfive.keep.data.Data
+import org.tekfive.keep.db.dbTransactionAt
 
 class QueuedMessage(
     val recipients: List<String>,
@@ -12,7 +13,7 @@ class QueuedMessage(
     val trackReceipt: Boolean,
     val message: JsonObject,
     internal var _state: QueuedMessageState = QueuedMessageState.QUEUED,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long = dbTransactionAt(),
     var lastStateChangeAt: Long = createdAt,
     val deliverAfter: Long? = null,
     val maxAttempts: Int = 1,

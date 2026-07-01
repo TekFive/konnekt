@@ -5,6 +5,7 @@ import org.tekfive.konnekt.message.MessageAddress
 import org.tekfive.konnekt.message.MessageRecipient
 import org.tekfive.konnekt.message.email.EmailCapability
 import org.tekfive.konnekt.message.email.EmailMessage
+import org.tekfive.konnekt.message.email.EmailProviderType
 import org.tekfive.konnekt.message.email.EmailResponse
 import org.tekfive.konnekt.message.email.EmailStatus
 import org.tekfive.konnekt.message.email.EmailAttachment
@@ -23,8 +24,10 @@ import java.util.Base64
  */
 object TwilioEmailProvider : EmailProvider {
 
-    val id: String = "twilio-sendgrid"
-    val capabilities: Set<EmailCapability> = setOf(EmailCapability.STATUS_LOOKUP)
+    // Computed getters (not initialized vals) to avoid a class-initialization cycle:
+    // EmailProviderType's entries reference this object during the enum's own static init.
+    val id: String get() = EmailProviderType.TWILIO_SENDGRID.providerId
+    val capabilities: Set<EmailCapability> get() = EmailProviderType.TWILIO_SENDGRID.capabilities
 
     override val supportsTracking: Boolean = true
 
