@@ -32,7 +32,6 @@ class CleanMessagesJob : Job {
 
     companion object : FixedIntervalJobSpec {
         override val estimateRuntime = false
-        override val jobTypeIdentifier = "clean-messages"
         override val jobPriority: Int? = null
         override val maxRetriesOnFailure: Int = 0
         override val minSecondsBetweenRetries: Int? = null
