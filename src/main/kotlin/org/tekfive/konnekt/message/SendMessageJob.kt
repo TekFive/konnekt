@@ -130,10 +130,12 @@ class SendMessageJob : Job {
         } finally {
             // Guard on PROCESSING so a concurrent external transition (e.g. the queue processor
             // marking a stalled message TIMED_OUT) is not clobbered or resurrected.
-            val updated = QueuedMessageTable.update({ (QueuedMessageTable.id eq queuedMessageId) and (QueuedMessageTable.state eq QueuedMessageState.PROCESSING) }) { statement ->
-                statement[QueuedMessageTable.state] = queuedMessage.state
-                statement[QueuedMessageTable.lastStateChangeAt] = queuedMessage.lastStateChangeAt
-                statement[QueuedMessageTable.receiptDetails] = queuedMessage.receiptDetails
+            val updated = db {
+                QueuedMessageTable.update({ (QueuedMessageTable.id eq queuedMessageId) and (QueuedMessageTable.state eq QueuedMessageState.PROCESSING) }) { statement ->
+                    statement[QueuedMessageTable.state] = queuedMessage.state
+                    statement[QueuedMessageTable.lastStateChangeAt] = queuedMessage.lastStateChangeAt
+                    statement[QueuedMessageTable.receiptDetails] = queuedMessage.receiptDetails
+                }
             }
             if (updated != 1) {
                 context.log.error("Queued message ${queuedMessage.id} was externally transitioned while sending; final state ${queuedMessage.state} was not recorded.")
