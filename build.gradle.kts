@@ -15,7 +15,7 @@ java {
 dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.okhttp)
-    implementation("com.sun.mail:jakarta.mail:2.0.1")
+    implementation("com.sun.mail:jakarta.mail:2.0.2")
     implementation("org.tekfive:jfk:1.0.0")
     implementation("org.tekfive:keep:1.0.0")
     implementation("org.tekfive:ack:1.0.0")
