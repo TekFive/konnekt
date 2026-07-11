@@ -11,4 +11,12 @@ class LlmException(
     val isRequestValidationError: Boolean = false,
     val isRateLimited: Boolean = false,
     val rateLimitResetAt: Instant? = null,
-) : RuntimeException(message, cause)
+) : RuntimeException(sanitize(message), cause) {
+    companion object {
+        private val providerBodyPattern = Regex("(?s)(API error \\d+):.*")
+
+        private fun sanitize(message: String): String {
+            return providerBodyPattern.replace(message) { match -> match.groupValues[1] }
+        }
+    }
+}
