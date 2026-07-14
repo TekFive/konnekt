@@ -3,6 +3,7 @@ package org.tekfive.konnekt.llm.providers.vllm
 import org.tekfive.jfk.JsonObject
 import org.tekfive.konnekt.llm.LlmEndpoint
 import org.tekfive.konnekt.llm.LlmException
+import org.tekfive.konnekt.llm.LlmReasoningEffort
 import org.tekfive.konnekt.llm.LlmRequest
 import org.tekfive.konnekt.llm.RateLimits
 import org.tekfive.konnekt.llm.LlmServiceProviderType
@@ -31,5 +32,15 @@ object VllmServiceProvider : OpenAICompatibleProvider() {
 
     override fun addProviderSpecificParams(json: JsonObject, request: LlmRequest, endpoint: LlmEndpoint) {
         request.topK?.let { json["top_k"] = it }
+    }
+
+    override fun addReasoningParams(json: JsonObject, request: LlmRequest) {
+        if (request.reasoningEffort == LlmReasoningEffort.NONE) {
+            // VLLM disables thinking through the chat template rather than reasoning_effort.
+            // Caller extra body parameters targeting chat_template_kwargs merge into this object.
+            json["chat_template_kwargs"] = JsonObject(mapOf("enable_thinking" to false))
+        } else {
+            super.addReasoningParams(json, request)
+        }
     }
 }

@@ -177,6 +177,20 @@ class AnthropicServiceProviderTest {
     }
 
     @Test
+    fun `none reasoning effort disables thinking`() {
+        val request = LlmRequest(
+            messages = listOf(LlmMessage.userMessage("Hi")),
+            endpoint = endpoint,
+            reasoningEffort = LlmReasoningEffort.NONE,
+        )
+        val json = AnthropicServiceProvider.buildRequestJson(request, endpoint)
+
+        val thinking = json.reqObj("thinking")
+        assertEquals("disabled", thinking.string("type"))
+        assertNull(thinking["budget_tokens"].int)
+    }
+
+    @Test
     fun `tools array built from request tools`() {
         val tool = Tool(
             name = "get_weather",

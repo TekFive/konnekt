@@ -229,13 +229,14 @@ object AnthropicServiceProvider : ChatProvider, StreamingProvider, BatchProvider
             json["stop_sequences"] = JsonArray(request.stopSequences)
         }
 
+        // A null effort means the provider default (no thinking field); NONE disables explicitly.
         if (request.reasoningEffort != null) {
-            val budgetTokens = when (request.reasoningEffort ?: LlmReasoningEffort.MEDIUM) {
-                LlmReasoningEffort.LOW -> 1024
-                LlmReasoningEffort.MEDIUM -> 4096
-                LlmReasoningEffort.HIGH -> 16384
+            json["thinking"] = when (request.reasoningEffort) {
+                LlmReasoningEffort.NONE -> JsonObject(mapOf("type" to "disabled"))
+                LlmReasoningEffort.LOW -> JsonObject(mapOf("type" to "enabled", "budget_tokens" to 1024))
+                LlmReasoningEffort.MEDIUM -> JsonObject(mapOf("type" to "enabled", "budget_tokens" to 4096))
+                LlmReasoningEffort.HIGH -> JsonObject(mapOf("type" to "enabled", "budget_tokens" to 16384))
             }
-            json["thinking"] = JsonObject(mapOf("type" to "enabled", "budget_tokens" to budgetTokens))
         }
 
         if (request.responseSchema != null) {
@@ -249,7 +250,7 @@ object AnthropicServiceProvider : ChatProvider, StreamingProvider, BatchProvider
             )
             json["tools"] = JsonArray(listOf(tool))
             json["tool_choice"] = JsonObject(mapOf("type" to "tool", "name" to schemaName))
-        } else if (request.tools != null) {
+        } else if (!request.tools.isNullOrEmpty()) {
             json["tools"] = JsonArray(request.tools.map { tool ->
                 JsonObject(
                     mapOf(

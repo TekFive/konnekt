@@ -68,6 +68,47 @@ class VllmServiceProviderTest {
     }
 
     @Test
+    fun `none reasoning effort maps to chat template kwargs`() {
+        val request = LlmRequest(
+            messages = listOf(LlmMessage.userMessage("Hello")),
+            endpoint = endpoint,
+            reasoningEffort = LlmReasoningEffort.NONE,
+        )
+        val json = VllmServiceProvider.buildRequestJson(request, endpoint)
+
+        assertTrue(!json.containsKey("reasoning_effort"))
+        assertEquals(false, json.reqObj("chat_template_kwargs")["enable_thinking"].boolean)
+    }
+
+    @Test
+    fun `none reasoning effort merges with caller chat template kwargs`() {
+        val request = LlmRequest(
+            messages = listOf(LlmMessage.userMessage("Hello")),
+            endpoint = endpoint,
+            reasoningEffort = LlmReasoningEffort.NONE,
+            extraBodyParameters = JsonObject(mapOf("chat_template_kwargs" to JsonObject(mapOf("custom_flag" to true)))),
+        )
+        val json = VllmServiceProvider.buildRequestJson(request, endpoint)
+
+        val kwargs = json.reqObj("chat_template_kwargs")
+        assertEquals(false, kwargs["enable_thinking"].boolean)
+        assertEquals(true, kwargs["custom_flag"].boolean)
+    }
+
+    @Test
+    fun `caller extra body parameters win over none reasoning mapping`() {
+        val request = LlmRequest(
+            messages = listOf(LlmMessage.userMessage("Hello")),
+            endpoint = endpoint,
+            reasoningEffort = LlmReasoningEffort.NONE,
+            extraBodyParameters = JsonObject(mapOf("chat_template_kwargs" to JsonObject(mapOf("enable_thinking" to true)))),
+        )
+        val json = VllmServiceProvider.buildRequestJson(request, endpoint)
+
+        assertEquals(true, json.reqObj("chat_template_kwargs")["enable_thinking"].boolean)
+    }
+
+    @Test
     fun `request JSON without model omits model field`() {
         val request = LlmRequest(
             messages = listOf(LlmMessage.userMessage("Hello")),

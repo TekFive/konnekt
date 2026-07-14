@@ -237,6 +237,18 @@ class OpenAIServiceProviderTest {
     }
 
     @Test
+    fun `empty tools list not serialized`() {
+        val request = LlmRequest(
+            messages = listOf(LlmMessage.userMessage("Hi")),
+            endpoint = endpoint,
+            tools = emptyList(),
+        )
+        val json = OpenAIServiceProvider.buildRequestJson(request, endpoint)
+
+        assertTrue(!json.containsKey("tools"))
+    }
+
+    @Test
     fun `tools not serialized when responseSchema is set`() {
         val tool = Tool(
             name = "get_weather",

@@ -164,6 +164,20 @@ class GeminiServiceProviderTest {
     }
 
     @Test
+    fun `none reasoning effort disables thinking with zero budget`() {
+        val request = LlmRequest(
+            messages = listOf(LlmMessage.userMessage("Hi")),
+            endpoint = endpoint,
+            reasoningEffort = LlmReasoningEffort.NONE,
+        )
+        val json = GeminiServiceProvider.buildRequestJson(request)
+
+        val thinkingConfig = json.reqObj("generationConfig").reqObj("thinkingConfig")
+        assertEquals(0, thinkingConfig["thinkingBudget"].int)
+        assertTrue(!thinkingConfig.containsKey("includeThoughts"))
+    }
+
+    @Test
     fun `structured output uses responseSchema in generation config`() {
         val schema = objectSchema {
             title = "PersonInfo"

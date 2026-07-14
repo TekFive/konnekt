@@ -251,22 +251,15 @@ object BedrockServiceProvider : ChatProvider, StreamingProvider {
         }
         json["inferenceConfig"] = inferenceConfig
 
+        // A null effort means the provider default (no thinking field); NONE disables explicitly.
         if (request.reasoningEffort != null) {
-            val budgetTokens = when (request.reasoningEffort ?: LlmReasoningEffort.MEDIUM) {
-                LlmReasoningEffort.LOW -> 1024
-                LlmReasoningEffort.MEDIUM -> 4096
-                LlmReasoningEffort.HIGH -> 16384
+            val thinking = when (request.reasoningEffort) {
+                LlmReasoningEffort.NONE -> JsonObject(mapOf("type" to "disabled"))
+                LlmReasoningEffort.LOW -> JsonObject(mapOf("type" to "enabled", "budget_tokens" to 1024))
+                LlmReasoningEffort.MEDIUM -> JsonObject(mapOf("type" to "enabled", "budget_tokens" to 4096))
+                LlmReasoningEffort.HIGH -> JsonObject(mapOf("type" to "enabled", "budget_tokens" to 16384))
             }
-            json["additionalModelRequestFields"] = JsonObject(
-                mapOf(
-                    "thinking" to JsonObject(
-                        mapOf(
-                            "type" to "enabled",
-                            "budget_tokens" to budgetTokens,
-                        )
-                    )
-                )
-            )
+            json["additionalModelRequestFields"] = JsonObject(mapOf("thinking" to thinking))
         }
 
         // Tools

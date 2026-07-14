@@ -62,6 +62,16 @@ abstract class OpenAICompatibleProvider : ChatProvider, StreamingProvider {
         // Override to add provider-specific request parameters (e.g., top_k for VLLM)
     }
 
+    /**
+     * Adds the reasoning fields for the request's [LlmRequest.reasoningEffort]. A null effort means
+     * the provider default and sends nothing; [LlmReasoningEffort.NONE] maps to `reasoning_effort:
+     * "none"` by default. Override for providers that disable reasoning differently (e.g. VLLM's
+     * `chat_template_kwargs`).
+     */
+    protected open fun addReasoningParams(json: JsonObject, request: LlmRequest) {
+        request.reasoningEffort?.let { json["reasoning_effort"] = it.name.lowercase() }
+    }
+
     protected open fun chatCompletionsUrl(endpoint: LlmEndpoint): String {
         val resolvedBaseUrl = endpoint.resolvedBaseUrl!!
         return if (resolvedBaseUrl.endsWith("chat/completions")) {
@@ -221,7 +231,7 @@ abstract class OpenAICompatibleProvider : ChatProvider, StreamingProvider {
         request.presencePenalty?.let { json["presence_penalty"] = it }
         request.frequencyPenalty?.let { json["frequency_penalty"] = it }
 
-        request.reasoningEffort?.let { json["reasoning_effort"] = it.name.lowercase() }
+        addReasoningParams(json, request)
 
         if (request.responseSchema != null) {
             val schemaWrapper = JsonObject()
@@ -231,7 +241,8 @@ abstract class OpenAICompatibleProvider : ChatProvider, StreamingProvider {
             json["response_format"] = JsonObject(mapOf("type" to "json_schema", "json_schema" to schemaWrapper))
         }
 
-        if (request.tools != null && request.responseSchema == null) {
+        // Guard against an empty list, not just null — OpenAI rejects "tools": [].
+        if (!request.tools.isNullOrEmpty() && request.responseSchema == null) {
             json["tools"] = JsonArray(request.tools.map { tool ->
                 JsonObject(
                     mapOf(

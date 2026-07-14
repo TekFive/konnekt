@@ -304,18 +304,24 @@ object GeminiServiceProvider : ChatProvider, StreamingProvider, BatchProvider, E
             generationConfig["frequencyPenalty"] = request.frequencyPenalty
         }
 
+        // A null effort means the provider default (no thinkingConfig); NONE disables thinking
+        // with a zero budget and no thought output.
         if (request.reasoningEffort != null) {
             val thinkingConfig = JsonObject()
-            val budgetTokens = when (request.reasoningEffort) {
-                LlmReasoningEffort.LOW -> 1024
-                LlmReasoningEffort.MEDIUM -> 4096
-                LlmReasoningEffort.HIGH -> 16384
-                null -> null
+            if (request.reasoningEffort == LlmReasoningEffort.NONE) {
+                thinkingConfig["thinkingBudget"] = 0
+            } else {
+                val budgetTokens = when (request.reasoningEffort) {
+                    LlmReasoningEffort.LOW -> 1024
+                    LlmReasoningEffort.MEDIUM -> 4096
+                    LlmReasoningEffort.HIGH -> 16384
+                    else -> null
+                }
+                if (budgetTokens != null) {
+                    thinkingConfig["thinkingBudget"] = budgetTokens
+                }
+                thinkingConfig["includeThoughts"] = true
             }
-            if (budgetTokens != null) {
-                thinkingConfig["thinkingBudget"] = budgetTokens
-            }
-            thinkingConfig["includeThoughts"] = true
             generationConfig["thinkingConfig"] = thinkingConfig
         }
 
@@ -327,7 +333,7 @@ object GeminiServiceProvider : ChatProvider, StreamingProvider, BatchProvider, E
         json["generationConfig"] = generationConfig
 
         // Tools
-        if (request.tools != null && request.responseSchema == null) {
+        if (!request.tools.isNullOrEmpty() && request.responseSchema == null) {
             val functionDeclarations = JsonArray(request.tools.map { tool ->
                 JsonObject(
                     mapOf(
@@ -349,7 +355,7 @@ object GeminiServiceProvider : ChatProvider, StreamingProvider, BatchProvider, E
         }
 
         // Tool choice
-        if (request.toolChoice != null && request.tools != null && request.responseSchema == null) {
+        if (request.toolChoice != null && !request.tools.isNullOrEmpty() && request.responseSchema == null) {
             val functionCallingConfig = when (request.toolChoice) {
                 is ToolChoice.Auto -> JsonObject(mapOf("mode" to "AUTO"))
                 is ToolChoice.None -> JsonObject(mapOf("mode" to "NONE"))

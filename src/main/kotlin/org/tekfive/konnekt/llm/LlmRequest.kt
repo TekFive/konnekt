@@ -1,6 +1,7 @@
 package org.tekfive.konnekt.llm
 
 import org.tekfive.jfk.JsonObject
+import org.tekfive.jfk.JsonValue
 import org.tekfive.jfk.schema.JsonSchema
 import org.tekfive.konnekt.llm.content.Tool
 import org.tekfive.konnekt.llm.content.ToolChoice
@@ -30,9 +31,31 @@ data class LlmRequest(
     }
 
     internal fun applyExtraBodyParameters(json: JsonObject): JsonObject {
-       extraBodyParameters?.entries?.forEach { (key, value) ->
-            json[key] = value
+        extraBodyParameters?.entries?.forEach { (key, value) ->
+            mergeBodyParameter(json, key, value)
         }
         return json
+    }
+
+    companion object {
+
+        /**
+         * Merges a caller-supplied extra body parameter into the built request body. When both the
+         * existing and incoming values are objects they are merged recursively (the caller's leaf
+         * values win); otherwise the caller's value replaces the built one. This lets provider-added
+         * objects (e.g. vLLM's `chat_template_kwargs` for [LlmReasoningEffort.NONE]) coexist with
+         * caller extras targeting the same object.
+         */
+        private fun mergeBodyParameter(target: JsonObject, key: String, value: JsonValue) {
+            val existingObject = target[key].obj
+            val valueObject = value.obj
+            if (existingObject != null && valueObject != null) {
+                valueObject.entries.forEach { (childKey, childValue) ->
+                    mergeBodyParameter(existingObject, childKey, childValue)
+                }
+            } else {
+                target[key] = value
+            }
+        }
     }
 }
