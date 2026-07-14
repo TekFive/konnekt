@@ -28,4 +28,4 @@ jobs:
         with:
           gradle-version: "8.12"
           cache-disabled: true
-      - run: gradle publish --no-daemon -Pgpr.user="${{ github.actor }}" -Pgpr.key="${{ secrets.GITHUB_TOKEN }}"
+      - run: gradle publish --no-daemon --refresh-dependencies -Pkotlin.mpp.keepMppDependenciesIntactInPoms=true -Pgpr.user="${{ github.actor }}" -Pgpr.key="${{ secrets.GITHUB_TOKEN }}"
